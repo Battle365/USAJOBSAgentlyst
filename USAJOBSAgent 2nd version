@@ -1,0 +1,758 @@
+import os
+import re
+import requests
+import streamlit as st
+
+
+# ============================================================
+# USAJOBSAgent
+# ============================================================
+
+st.set_page_config(
+    page_title="USAJOBSAgent",
+    page_icon="🇺🇸",
+    layout="wide"
+)
+
+API_URL = "https://data.usajobs.gov/api/search"
+
+API_KEY = os.getenv("USAJOBS_API_KEY")
+API_EMAIL = os.getenv("USAJOBS_API_EMAIL")
+
+JOB_TYPES = [
+    "Program Analyst",
+    "IT",
+    "Management Analyst"
+]
+
+LOCATIONS = [
+    "Biloxi, Mississippi",
+    "Gulfport, Mississippi"
+]
+
+
+# ============================================================
+# PAGE
+# ============================================================
+
+st.title("USAJOBSAgent")
+st.subheader("Department of Veterans Affairs Job Match Assistant")
+
+st.write(
+    "Find current VA positions, compare them with your experience, "
+    "prepare your application, and continue to the official USAJOBS "
+    "application."
+)
+
+
+# ============================================================
+# APPLICANT PROFILE
+# ============================================================
+
+st.header("Applicant Profile")
+
+resume = st.text_area(
+    "Resume / Work Experience",
+    height=220,
+    placeholder="Paste your resume or relevant work experience here."
+)
+
+skills = st.text_input(
+    "Skills",
+    placeholder="Example: Python, SQL, Excel, Power BI, data analysis"
+)
+
+education = st.text_input(
+    "Education / Certifications",
+    placeholder="Example: Associate Degree in Information Technology"
+)
+
+
+# ============================================================
+# SEARCH
+# ============================================================
+
+st.header("Search VA Jobs")
+
+job_types = st.multiselect(
+    "Job Type",
+    JOB_TYPES,
+    default=JOB_TYPES
+)
+
+locations = st.multiselect(
+    "Location",
+    LOCATIONS,
+    default=LOCATIONS
+)
+
+search_button = st.button(
+    "Search VA Jobs",
+    type="primary",
+    use_container_width=True
+)
+
+
+# ============================================================
+# API
+# ============================================================
+
+def get_headers():
+
+    return {
+        "Host": "data.usajobs.gov",
+        "User-Agent": API_EMAIL or "",
+        "Authorization-Key": API_KEY or ""
+    }
+
+
+def search_jobs(job_type, location):
+
+    if not API_KEY or not API_EMAIL:
+        st.error(
+            "USAJOBS API configuration is missing. "
+            "Set USAJOBS_API_KEY and USAJOBS_API_EMAIL."
+        )
+        return []
+
+    params = {
+        "PositionTitle": job_type,
+        "LocationName": location,
+        "Organization": "VA",
+        "Fields": "Full",
+        "ResultsPerPage": 50,
+        "Page": 1,
+        "SortField": "closingdate",
+        "SortDirection": "Asc"
+    }
+
+    try:
+
+        response = requests.get(
+            API_URL,
+            headers=get_headers(),
+            params=params,
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        return data.get(
+            "SearchResult",
+            {}
+        ).get(
+            "SearchResultItems",
+            []
+        )
+
+    except requests.exceptions.RequestException as error:
+
+        st.error(
+            f"USAJOBS connection error: {error}"
+        )
+
+        return []
+
+    except ValueError:
+
+        st.error(
+            "USAJOBS returned an invalid response."
+        )
+
+        return []
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def clean(value):
+
+    if not value:
+        return ""
+
+    if isinstance(value, list):
+        value = " ".join(
+            str(x) for x in value
+        )
+
+    return re.sub(
+        r"\s+",
+        " ",
+        str(value)
+    ).strip()
+
+
+def normalize(value):
+
+    value = clean(value).lower()
+
+    value = re.sub(
+        r"[^a-z0-9\s]",
+        " ",
+        value
+    )
+
+    return re.sub(
+        r"\s+",
+        " ",
+        value
+    )
+
+
+def format_date(value):
+
+    if not value:
+        return "Not provided"
+
+    return str(value)[:10]
+
+
+# ============================================================
+# EXTRACT JOB
+# ============================================================
+
+def extract_job(item):
+
+    d = item.get(
+        "MatchedObjectDescriptor",
+        {}
+    )
+
+    locations_data = d.get(
+        "PositionLocation",
+        []
+    )
+
+    location_names = []
+
+    for location in locations_data:
+
+        if isinstance(location, dict):
+
+            name = clean(
+                location.get(
+                    "LocationName"
+                )
+            )
+
+            if name:
+                location_names.append(name)
+
+    grades = d.get(
+        "JobGrade",
+        []
+    )
+
+    grade_names = []
+
+    for grade in grades:
+
+        if isinstance(grade, dict):
+
+            value = clean(
+                grade.get("Code")
+                or grade.get("Name")
+            )
+
+            if value:
+                grade_names.append(value)
+
+    salary = d.get(
+        "PositionRemuneration",
+        []
+    )
+
+    salary_text = ""
+
+    if salary:
+
+        first_salary = salary[0]
+
+        minimum = first_salary.get(
+            "MinimumRange"
+        )
+
+        maximum = first_salary.get(
+            "MaximumRange"
+        )
+
+        if minimum and maximum:
+
+            salary_text = (
+                f"${minimum} - ${maximum}"
+            )
+
+    details = d.get(
+        "UserArea",
+        {}
+    ).get(
+        "Details",
+        {}
+    )
+
+    return {
+
+        "title": clean(
+            d.get("PositionTitle")
+        ),
+
+        "agency": clean(
+            d.get("OrganizationName")
+        ),
+
+        "department": clean(
+            d.get("DepartmentName")
+        ),
+
+        "location": ", ".join(
+            location_names
+        ),
+
+        "grade": ", ".join(
+            grade_names
+        ),
+
+        "salary": salary_text,
+
+        "announcement_number": clean(
+            d.get("PositionID")
+        ),
+
+        "announcement_url": d.get(
+            "PositionURI",
+            ""
+        ),
+
+        "apply_url": d.get(
+            "ApplyURI",
+            ""
+        ),
+
+        "open_date": d.get(
+            "PublicationStartDate"
+        ),
+
+        "close_date": d.get(
+            "ApplicationCloseDate"
+        ),
+
+        "duties": clean(
+            details.get("MajorDuties")
+        ),
+
+        "education": clean(
+            details.get("Education")
+        ),
+
+        "requirements": clean(
+            details.get("Requirements")
+        ),
+
+        "qualification": clean(
+            d.get("QualificationSummary")
+        )
+    }
+
+
+# ============================================================
+# MATCHING
+# ============================================================
+
+MATCH_TERMS = [
+
+    "program analyst",
+    "program analysis",
+    "management analyst",
+    "management analysis",
+    "information technology",
+    "it specialist",
+    "information systems",
+    "data analysis",
+    "data management",
+    "reporting",
+    "excel",
+    "power bi",
+    "sql",
+    "python",
+    "database",
+    "process improvement",
+    "workflow",
+    "operations",
+    "healthcare",
+    "veterans",
+    "federal"
+]
+
+
+def calculate_match(job, applicant):
+
+    applicant_text = normalize(
+        applicant
+    )
+
+    announcement = normalize(
+        " ".join([
+            job["title"],
+            job["duties"],
+            job["education"],
+            job["requirements"],
+            job["qualification"]
+        ])
+    )
+
+    matched = []
+
+    for term in MATCH_TERMS:
+
+        if (
+            term in applicant_text
+            and term in announcement
+        ):
+            matched.append(term)
+
+    if not matched:
+        return 0, []
+
+    score = min(
+        100,
+        len(matched) * 10
+    )
+
+    return score, matched
+
+
+# ============================================================
+# APPLICATION PREPARATION
+# ============================================================
+
+def prepare_application(job, applicant):
+
+    applicant_text = normalize(
+        applicant
+    )
+
+    relevant = []
+
+    for term in MATCH_TERMS:
+
+        if term in applicant_text:
+
+            if term in normalize(
+                " ".join([
+                    job["title"],
+                    job["duties"],
+                    job["requirements"],
+                    job["qualification"]
+                ])
+            ):
+
+                relevant.append(term)
+
+    return relevant
+
+
+# ============================================================
+# SEARCH
+# ============================================================
+
+if search_button:
+
+    if not resume.strip():
+
+        st.warning(
+            "Paste your resume or work experience first."
+        )
+
+        st.stop()
+
+    if not job_types:
+
+        st.warning(
+            "Select at least one job type."
+        )
+
+        st.stop()
+
+    if not locations:
+
+        st.warning(
+            "Select at least one location."
+        )
+
+        st.stop()
+
+    applicant_profile = " ".join([
+        resume,
+        skills,
+        education
+    ])
+
+    jobs = []
+
+    for job_type in job_types:
+
+        for location in locations:
+
+            results = search_jobs(
+                job_type,
+                location
+            )
+
+            for result in results:
+
+                jobs.append(
+                    extract_job(result)
+                )
+
+    # Remove duplicate announcements
+
+    unique_jobs = {}
+
+    for job in jobs:
+
+        number = job[
+            "announcement_number"
+        ]
+
+        if number:
+
+            unique_jobs[number] = job
+
+    jobs = list(
+        unique_jobs.values()
+    )
+
+    # Score jobs
+
+    for job in jobs:
+
+        score, matched = calculate_match(
+            job,
+            applicant_profile
+        )
+
+        job["score"] = score
+
+        job["matched"] = matched
+
+        job["status"] = (
+            "MATCH"
+            if score >= 40
+            else "NOT A MATCH"
+        )
+
+    # Best matches first
+
+    jobs.sort(
+        key=lambda job: (
+            job["status"] != "MATCH",
+            -job["score"]
+        )
+    )
+
+    st.session_state["jobs"] = jobs
+
+    st.session_state[
+        "applicant_profile"
+    ] = applicant_profile
+
+
+# ============================================================
+# RESULTS
+# ============================================================
+
+if "jobs" in st.session_state:
+
+    st.header("Job Results")
+
+    jobs = st.session_state["jobs"]
+
+    if not jobs:
+
+        st.info(
+            "No current VA positions were found."
+        )
+
+    for job in jobs:
+
+        if job["status"] == "MATCH":
+
+            st.success(
+                f"MATCH — {job['score']}%"
+            )
+
+        else:
+
+            st.warning(
+                f"NOT A MATCH — {job['score']}%"
+            )
+
+        st.subheader(
+            job["title"]
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            st.write(
+                f"**Agency:** {job['agency']}"
+            )
+
+            st.write(
+                f"**Department:** {job['department']}"
+            )
+
+            st.write(
+                f"**Location:** {job['location']}"
+            )
+
+            st.write(
+                f"**Grade:** "
+                f"{job['grade'] or 'Not provided'}"
+            )
+
+        with col2:
+
+            st.write(
+                f"**Salary:** "
+                f"{job['salary'] or 'Not provided'}"
+            )
+
+            st.write(
+                f"**Open Date:** "
+                f"{format_date(job['open_date'])}"
+            )
+
+            st.write(
+                f"**Closing Date:** "
+                f"{format_date(job['close_date'])}"
+            )
+
+            st.write(
+                f"**Announcement #:** "
+                f"{job['announcement_number']}"
+            )
+
+        if job["matched"]:
+
+            st.write(
+                "**Matching experience:** "
+                + ", ".join(
+                    job["matched"]
+                )
+            )
+
+        else:
+
+            st.write(
+                "No significant matching experience "
+                "was identified."
+            )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            if job["announcement_url"]:
+
+                st.link_button(
+                    "Open Official Announcement",
+                    job["announcement_url"],
+                    use_container_width=True
+                )
+
+        with col2:
+
+            if job["apply_url"]:
+
+                st.link_button(
+                    "Continue to USAJOBS",
+                    job["apply_url"],
+                    use_container_width=True
+                )
+
+        if job["status"] == "MATCH":
+
+            with st.expander(
+                "Prepare Application"
+            ):
+
+                relevant = prepare_application(
+                    job,
+                    st.session_state[
+                        "applicant_profile"
+                    ]
+                )
+
+                st.write(
+                    "Review these areas of your "
+                    "experience before applying:"
+                )
+
+                if relevant:
+
+                    for item in relevant:
+
+                        st.write(
+                            f"✓ {item}"
+                        )
+
+                else:
+
+                    st.write(
+                        "No specific matching experience "
+                        "was identified."
+                    )
+
+                st.warning(
+                    "Review the official announcement "
+                    "and verify that you meet all "
+                    "qualification requirements."
+                )
+
+                if job["announcement_url"]:
+
+                    st.link_button(
+                        "Review Announcement",
+                        job["announcement_url"],
+                        use_container_width=True
+                    )
+
+                if job["apply_url"]:
+
+                    st.link_button(
+                        "Proceed to Official Application",
+                        job["apply_url"],
+                        use_container_width=True
+                    )
+
+        st.divider()
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.caption(
+    "USAJOBSAgent does not collect USAJOBS passwords "
+    "and does not automatically submit applications."
+)
+requirements.txt
+
+Replace the contents with:
+
+streamlit
+requests
+Then test it
+
+In VS Code:
+
+Save app.py.
+Open Terminal → New Terminal.
+Run:
+streamlit run app.py
+Your browser s

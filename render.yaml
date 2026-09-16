@@ -8,7 +8,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: USAJOBS_API_KEY
+      - key: APP_ENV
+        value: production
+      - key: SESSION_RETENTION_MINUTES
+        value: 60
+      - key: PRIVACY_CONTACT
         sync: false
-      - key: USAJOBS_EMAIL
+      - key: CLAMAV_HOST
         sync: false
+      - key: CLAMAV_PORT
+        value: 3310

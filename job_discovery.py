@@ -10,6 +10,7 @@ import requests
 
 from historic_poc import DiscoveryError, discover, fetch_text, is_open, normalize_pair
 from models import ProcessingError
+from pre_ranking import select_for_text_experimental
 from profile_extraction import ResumeProfile
 from series_inference import active_series_catalog
 
@@ -127,9 +128,9 @@ def discover_for_profile(profile: ResumeProfile, provider: JobDiscoveryProvider 
                 by_series[code].append(row)
                 candidate_ids.add(control)
                 non_gs_seen |= str(row.get("payScale") or "").upper().strip() != "GS"
-    selected = _balanced_candidates(by_series, series, profile.constraints.maximum_announcement_texts)
-    if len(candidate_ids) > profile.constraints.maximum_announcement_texts:
-        notices.append(f"Qualification text was checked for {len(selected)} balanced candidates out of {len(candidate_ids)} open grade-eligible announcements; results are not exhaustive.")
+    selected = [item.summary for item in select_for_text_experimental(profile, by_series, today=today)]
+    if len(candidate_ids) > len(selected):
+        notices.append(f"Qualification text was checked for {len(selected)} résumé-prioritized candidates out of {len(candidate_ids)} open grade-eligible announcements; results are not exhaustive.")
     if non_gs_seen:
         notices.append("The GS-11+ default applies to GS positions. Non-GS pay plans are shown separately because an authoritative grade equivalence is not established.")
     vacancies: list[dict] = []

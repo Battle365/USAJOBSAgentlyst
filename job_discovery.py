@@ -9,8 +9,9 @@ from typing import Protocol
 import requests
 
 from historic_poc import DiscoveryError, discover, fetch_text, is_open, normalize_pair
-from models import ProcessingError, ResumeRecord
-from series_inference import FALLBACK_CATALOG, active_series_catalog, infer_series
+from models import ProcessingError
+from profile_extraction import ResumeProfile
+from series_inference import active_series_catalog
 
 
 MIN_GS_GRADE = 11
@@ -75,12 +76,12 @@ def _recent_first(summary: dict) -> tuple[int, str]:
     return (-int(opened) if opened.isdigit() else 0, str(summary.get("usajobsControlNumber") or ""))
 
 
-def _balanced_candidates(by_series: dict[str, list[dict]], codes: tuple[str, ...]) -> list[dict]:
+def _balanced_candidates(by_series: dict[str, list[dict]], codes: tuple[str, ...], limit: int = MAX_TEXT_REQUESTS) -> list[dict]:
     """Round-robin across supported series so one large series cannot dominate."""
     ordered = {code: sorted(by_series.get(code, []), key=_recent_first) for code in codes}
     selected: list[dict] = []
     seen: set[str] = set()
-    while len(selected) < MAX_TEXT_REQUESTS and any(ordered.values()):
+    while len(selected) < limit and any(ordered.values()):
         for code in codes:
             rows = ordered[code]
             if not rows:
@@ -90,18 +91,14 @@ def _balanced_candidates(by_series: dict[str, list[dict]], codes: tuple[str, ...
             if control not in seen:
                 seen.add(control)
                 selected.append(row)
-                if len(selected) >= MAX_TEXT_REQUESTS:
+                if len(selected) >= limit:
                     break
     return selected
 
 
-def discover_for_resume(resume: ResumeRecord, provider: JobDiscoveryProvider | None = None) -> DiscoveryResult:
+def discover_for_profile(profile: ResumeProfile, provider: JobDiscoveryProvider | None = None) -> DiscoveryResult:
     adapter = provider or HistoricJoaProvider()
-    if hasattr(adapter, "series_catalog"):
-        catalog, authoritative_catalog = adapter.series_catalog()
-    else:
-        catalog, authoritative_catalog = FALLBACK_CATALOG, False
-    series = tuple(candidate.code for candidate in infer_series(resume, catalog))
+    series = tuple(candidate.code for candidate in profile.series_candidates)
     if not series:
         return DiscoveryResult((), (), (), 0, True, ("No occupational series could be inferred confidently from work experience. Use the manual announcement workflow.",))
     by_series: dict[str, list[dict]] = {}
@@ -110,7 +107,7 @@ def discover_for_resume(resume: ResumeRecord, provider: JobDiscoveryProvider | N
     errors: list[ProcessingError] = []
     complete = True
     non_gs_seen = False
-    if not authoritative_catalog:
+    if not profile.authoritative_catalog:
         notices.append("The live occupational-series code list was unavailable; discovery used a smaller verified fallback catalog.")
     today = datetime.now(UTC).date()
     for code in series:
@@ -126,12 +123,12 @@ def discover_for_resume(resume: ResumeRecord, provider: JobDiscoveryProvider | N
         by_series[code] = []
         for row in page.candidates:
             control = str(row.get("usajobsControlNumber") or "")
-            if control.isdigit() and is_open(row, today) and grade_eligible(row):
+            if control.isdigit() and is_open(row, today) and grade_eligible(row, profile.constraints.minimum_gs_grade):
                 by_series[code].append(row)
                 candidate_ids.add(control)
                 non_gs_seen |= str(row.get("payScale") or "").upper().strip() != "GS"
-    selected = _balanced_candidates(by_series, series)
-    if len(candidate_ids) > MAX_TEXT_REQUESTS:
+    selected = _balanced_candidates(by_series, series, profile.constraints.maximum_announcement_texts)
+    if len(candidate_ids) > profile.constraints.maximum_announcement_texts:
         notices.append(f"Qualification text was checked for {len(selected)} balanced candidates out of {len(candidate_ids)} open grade-eligible announcements; results are not exhaustive.")
     if non_gs_seen:
         notices.append("The GS-11+ default applies to GS positions. Non-GS pay plans are shown separately because an authoritative grade equivalence is not established.")

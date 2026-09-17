@@ -9,10 +9,11 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from acquisition import AnnouncementInputError, build_manual_vacancy
-from job_discovery import discover_for_resume
+from job_discovery import discover_for_profile
 from match_presentation import ClassifiedDecision, rank_decisions
 from matcher import evaluate_vacancies
 from models import DecisionRecord, ResumeRecord
+from profile_extraction import extract_profile
 from resume_ingest import MAX_RESUME_BYTES, ResumeValidationError, parse_pasted_resume, parse_resume, scan_with_clamav
 
 load_dotenv()
@@ -20,7 +21,7 @@ load_dotenv()
 
 def delete_session_data() -> None:
     """Remove the resume record and every associated decision from this session."""
-    for key in ("resume", "vacancies", "batch", "discovery_result", "owner_id", "session_started"):
+    for key in ("resume", "profile", "vacancies", "batch", "discovery_result", "owner_id", "session_started"):
         st.session_state.pop(key, None)
     st.session_state["upload_nonce"] = secrets.token_hex(8)
 
@@ -89,7 +90,9 @@ def _resume_screen() -> None:
 
 def _run_discovery(resume: ResumeRecord) -> None:
     with st.spinner("Finding open announcements and comparing qualifications with your résumé…"):
-        result = discover_for_resume(resume)
+        profile = extract_profile(resume)
+        st.session_state.profile = profile
+        result = discover_for_profile(profile)
         st.session_state.discovery_result = result
         st.session_state.batch = evaluate_vacancies(resume, list(result.vacancies))
         st.session_state.batch.errors.extend(result.errors)

@@ -1,9 +1,11 @@
 from datetime import UTC, datetime, timedelta
 
 from historic_poc import Discovery
-from job_discovery import discover_for_resume
+from job_discovery import discover_for_profile
 from matcher import evaluate_vacancies
 from models import EvidenceUnit, ResumeRecord
+from profile_extraction import extract_profile
+from series_inference import FALLBACK_CATALOG
 
 
 def _resume(text="Program Analyst performing budget formulation and financial analysis"):
@@ -53,7 +55,7 @@ class Provider:
 
 def test_discovery_to_existing_matcher_and_metadata():
     provider = Provider([_summary(1001), _summary(1002, "Job closed")])
-    result = discover_for_resume(_resume(), provider)
+    result = discover_for_profile(extract_profile(_resume(), FALLBACK_CATALOG), provider)
     assert result.series == ("0343",)
     assert provider.requested == ["1001"]
     assert len(result.vacancies) == 1
@@ -66,7 +68,7 @@ def test_discovery_to_existing_matcher_and_metadata():
 
 
 def test_discovery_without_confident_series_uses_manual_fallback():
-    result = discover_for_resume(_resume("General clerical support"))
+    result = discover_for_profile(extract_profile(_resume("General clerical support"), FALLBACK_CATALOG))
     assert not result.series and not result.vacancies
     assert "manual announcement" in result.notices[0]
 
@@ -75,7 +77,7 @@ def test_discovery_surfaces_partial_and_text_failure():
     class FailedProvider(Provider):
         def announcement(self, control_number):
             raise ValueError("bad record")
-    result = discover_for_resume(_resume(), FailedProvider([_summary(1001)], complete=False))
+    result = discover_for_profile(extract_profile(_resume(), FALLBACK_CATALOG), FailedProvider([_summary(1001)], complete=False))
     assert not result.complete
     assert not result.vacancies
     assert len(result.errors) == 1

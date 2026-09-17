@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import requests
 
-from models import ResumeRecord
+from models import EvidenceUnit, ResumeRecord
 
 
 CATALOG_URL = "https://data.usajobs.gov/api/codelist/occupationalseries"
@@ -82,6 +82,8 @@ class SeriesCandidate:
     name: str
     confidence: int
     evidence: tuple[str, ...]
+    resume_evidence: tuple[EvidenceUnit, ...] = ()
+    duty_signals: tuple[str, ...] = ()
 
 
 _catalog_cache: tuple[datetime, dict[str, str]] | None = None
@@ -139,31 +141,37 @@ def _role_evidence(text: str, title: str) -> bool:
 
 
 def infer_series(resume: ResumeRecord, catalog: dict[str, str]) -> tuple[SeriesCandidate, ...]:
-    experience = [unit.text for unit in resume.evidence if unit.section == "experience"]
-    other = [unit.text for unit in resume.evidence if unit.section in {"education", "certifications", "licenses", "training"}]
+    experience = [unit for unit in resume.evidence if unit.section == "experience"]
+    other = [unit for unit in resume.evidence if unit.section in {"education", "certifications", "licenses", "training"}]
     candidates: list[SeriesCandidate] = []
     for code, name in catalog.items():
         signals: list[str] = []
-        explicit = any(re.search(rf"\b(?:GS[- /]?)?{re.escape(code)}\b", line, re.I) for line in experience)
-        if explicit:
+        supporting: list[EvidenceUnit] = []
+        explicit_units = [unit for unit in experience if re.search(rf"\b(?:GS[- /]?)?{re.escape(code)}\b", unit.text, re.I)]
+        if explicit_units:
             signals.append(f"explicit occupational series {code}")
+            supporting.extend(explicit_units)
         aliases = (*ROLE_ALIASES.get(code, ()), name)
-        role = next((alias for alias in aliases if any(_role_evidence(line, alias) for line in experience)), None)
+        role = next(((alias, unit) for alias in aliases for unit in experience if _role_evidence(unit.text, alias)), None)
         if role:
-            signals.append(f"documented role: {role}")
-        cues = [cue for cue in DUTY_CUES.get(code, ()) if any(_contains(line, cue) for line in experience)]
+            signals.append(f"documented role: {role[0]}")
+            supporting.append(role[1])
+        cue_units = [(cue, next((unit for unit in experience if _contains(unit.text, cue)), None)) for cue in DUTY_CUES.get(code, ())]
+        cues = [cue for cue, unit in cue_units if unit is not None]
         if len(cues) >= 2:
             signals.append("performed-work signals: " + ", ".join(cues[:3]))
-        credential = False
+            supporting.extend(unit for _, unit in cue_units if unit is not None)
+        credential_units: list[EvidenceUnit] = []
         if code in {"0602", "0603", "0610", "0620", "0185"}:
-            credential = any(_contains(line, phrase) for line in other for phrase in ("license", "licensed", "registered nurse", "board certified", "medical degree", "social work degree"))
-            if credential:
+            credential_units = [unit for unit in other if any(_contains(unit.text, phrase) for phrase in ("license", "licensed", "registered nurse", "board certified", "medical degree", "social work degree"))]
+            if credential_units:
                 signals.append("related education or credential stated")
-        confidence = min(100, (100 if explicit else 0) or (80 if role else 0) or (55 if len(cues) >= 2 else 0))
+                supporting.extend(credential_units)
+        confidence = min(100, (100 if explicit_units else 0) or (80 if role else 0) or (55 if len(cues) >= 2 else 0))
         if confidence == 55 and len(cues) >= 3:
             confidence = 75
-        if confidence == 55 and credential:
+        if confidence == 55 and credential_units:
             confidence = 75
         if confidence >= MIN_CONFIDENCE:
-            candidates.append(SeriesCandidate(code, name, confidence, tuple(signals)))
+            candidates.append(SeriesCandidate(code, name, confidence, tuple(signals), tuple(dict.fromkeys(supporting)), tuple(cues)))
     return tuple(sorted(candidates, key=lambda item: (-item.confidence, item.code))[:MAX_CONFIDENT_SERIES])

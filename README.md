@@ -22,7 +22,8 @@ Discovery is intentionally bounded. It uses the public official occupational-ser
 - `resume_ingest.py`: signature, size, archive/active-content, encryption, readability, and extraction checks; session-scoped resume/evidence records.
 - `acquisition.py`: pasted-text normalization and official-host URL validation. Legacy URL retrieval remains in this module but is not used by the active app.
 - `historic_poc.py`: reusable unauthenticated Historic JOA endpoint primitives and open-status filtering.
-- `job_discovery.py`: provider-neutral discovery orchestration and the Historic JOA adapter. It does not import or modify the matching engine.
+- `profile_extraction.py`: structured, session-only résumé profile with supported series, confidence, source evidence, duty signals, and existing discovery limits.
+- `job_discovery.py`: provider-neutral discovery orchestration that consumes the profile and the Historic JOA adapter. It does not import or modify the matching engine.
 - `series_inference.py`: official occupational-series catalog and occupation-neutral, confidence-bounded inference from résumé evidence.
 - `usajobs.py`: isolated, disabled authenticated API provider code retained for a possible future approved integration; the active app does not import or invoke it.
 - `matcher.py`: deterministic mandatory-requirement paths, conservative evidence mapping, binary qualification decisions, and not-evaluable separation.

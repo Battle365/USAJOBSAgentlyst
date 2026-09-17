@@ -66,6 +66,9 @@ class DecisionRecord:
     reason: str
     processed_at: str
     matched_grade: str | None = None
+    eligibility_source_paths: tuple[str, ...] = ()
+    eligibility_who_may_apply: str = ""
+    eligibility_routes: tuple[RequirementEvaluation, ...] = ()
     error_state: None = None
 
     def as_dict(self) -> dict[str, Any]:

@@ -19,6 +19,29 @@ class NotEvaluable(ValueError):
     pass
 
 
+def _public_route(text: str) -> bool:
+    lower = text.lower()
+    return any(phrase in lower for phrase in ("open to the public", "the public", "u.s. citizens", "us citizens"))
+
+
+def _live_eligibility_routes(vacancy: dict) -> tuple[Requirement, ...]:
+    routes = tuple(str(value).strip() for value in vacancy.get("hiring_paths", ()) if str(value).strip())
+    if not routes:
+        fallback = str(vacancy.get("eligibility") or "").strip()
+        routes = (fallback,) if fallback else ()
+    if not routes:
+        raise NotEvaluable("The announcement does not identify an applicant eligibility path.")
+    return tuple(Requirement(f"eligibility-{index}", "eligibility", route)
+                 for index, route in enumerate(dict.fromkeys(routes), 1))
+
+
+def _with_live_routes(paths: tuple[tuple[Requirement, ...], ...], vacancy: dict) -> tuple[tuple[Requirement, ...], ...]:
+    if vacancy.get("eligibility_source") != "historic_joa":
+        return paths
+    routes = _live_eligibility_routes(vacancy)
+    return tuple(path + (route,) for path in paths for route in routes)
+
+
 def _sentences(text: str) -> list[str]:
     return [re.sub(r"\s+", " ", value).strip(" •\t-") for value in re.split(r"\n+|(?<=[.;!?])\s+", text) if value.strip()]
 
@@ -79,8 +102,8 @@ def extract_requirement_paths(vacancy: dict) -> tuple[tuple[Requirement, ...], .
     conditions = _make_requirements(conditions_text, "condition", "condition")
     eligibility: list[Requirement] = []
     eligibility_lower = eligibility_text.lower()
-    public_path = any(phrase in eligibility_lower for phrase in ("open to the public", "u.s. citizens", "us citizens", "the public"))
-    if eligibility_text.strip() and not public_path:
+    public_path = _public_route(eligibility_lower)
+    if vacancy.get("eligibility_source") != "historic_joa" and eligibility_text.strip() and not public_path:
         eligibility = [Requirement("eligibility-1", "eligibility", eligibility_text)]
 
     substitution_denied = any(phrase in all_text for phrase in ("may not be substituted", "cannot be substituted", "no substitution"))
@@ -94,7 +117,7 @@ def extract_requirement_paths(vacancy: dict) -> tuple[tuple[Requirement, ...], .
             paths.append(tuple(education) + base)
         if "combination" in all_text:
             paths.append(tuple(experience + education) + base)
-        return tuple(paths)
+        return _with_live_routes(tuple(paths), vacancy)
     offered_grades = [str(grade).upper() for grade in vacancy.get("grades", [])]
     grade_groups: list[tuple[Requirement, ...]] = []
     if len(offered_grades) > 1 and experience:
@@ -105,11 +128,11 @@ def extract_requirement_paths(vacancy: dict) -> tuple[tuple[Requirement, ...], .
             if specific:
                 grade_groups.append(tuple(common + specific + education) + base)
         if grade_groups:
-            return tuple(grade_groups)
+            return _with_live_routes(tuple(grade_groups), vacancy)
     combined = tuple(experience + education) + base
     if not combined:
         raise NotEvaluable("No explicit qualification path could be identified.")
-    return (combined,)
+    return _with_live_routes((combined,), vacancy)
 
 
 def _citation(requirement: Requirement, unit: EvidenceUnit) -> EvidenceCitation:
@@ -156,6 +179,26 @@ def _support(requirement: Requirement, evidence: Iterable[EvidenceUnit]) -> Requ
     return RequirementEvaluation(requirement, True, citations, "supported by explicit resume evidence")
 
 
+def _support_live_eligibility(requirement: Requirement, evidence: Iterable[EvidenceUnit]) -> RequirementEvaluation:
+    if _public_route(requirement.text):
+        return RequirementEvaluation(requirement, True, (), "public hiring path")
+    route = requirement.text.lower()
+    if "federal employee" in route:
+        qualified = tuple(unit for unit in evidence
+                          if re.search(r"\bfederal employees?\b", unit.text, re.I)
+                          and ("competitive service" not in route or "competitive service" in unit.text.lower()))
+        if qualified:
+            return RequirementEvaluation(requirement, True,
+                                         tuple(_citation(requirement, unit) for unit in qualified[:3]),
+                                         "supported by explicit resume status evidence")
+    else:
+        supported = _support(requirement, evidence)
+        if supported.satisfied:
+            return supported
+    return RequirementEvaluation(requirement, False, (),
+                                 "resume does not show evidence for this hiring eligibility path")
+
+
 def _parse_date(value: str) -> date | None:
     if not value:
         return None
@@ -175,7 +218,13 @@ def evaluate_vacancy(resume: ResumeRecord, vacancy: dict, *, today: date | None 
     if close_date and close_date < (today or datetime.now(UTC).date()):
         raise NotEvaluable("The announcement is closed and is no longer actionable.")
     paths = extract_requirement_paths(vacancy)
-    evaluated_paths = tuple(tuple(_support(requirement, resume.evidence) for requirement in path) for path in paths)
+    live = vacancy.get("eligibility_source") == "historic_joa"
+    evaluated_paths = tuple(tuple(
+        _support_live_eligibility(requirement, resume.evidence)
+        if live and requirement.kind == "eligibility"
+        else _support(requirement, resume.evidence)
+        for requirement in path
+    ) for path in paths)
     passing = [path for path in evaluated_paths if path and all(item.satisfied for item in path)]
     outcome = "MATCH" if passing else "NOT A MATCH"
     if outcome == "MATCH":
@@ -194,10 +243,16 @@ def evaluate_vacancy(resume: ResumeRecord, vacancy: dict, *, today: date | None 
                 break
         if matched_grade is None and len(vacancy.get("grades", [])) == 1:
             matched_grade = vacancy["grades"][0]
+    eligibility_routes = tuple(dict((item.requirement.requirement_id, item)
+                                    for path in evaluated_paths for item in path
+                                    if live and item.requirement.kind == "eligibility").values())
     return DecisionRecord(
         resume_hash=resume.content_hash, vacancy_id=vacancy["id"], vacancy_hash=vacancy["source_hash"],
         decision_version=DECISION_VERSION, paths=evaluated_paths, final_outcome=outcome,
         reason=reason, processed_at=datetime.now(UTC).isoformat(), matched_grade=matched_grade,
+        eligibility_source_paths=tuple(vacancy.get("hiring_paths", ())) if live else (),
+        eligibility_who_may_apply=str(vacancy.get("eligibility") or "") if live else "",
+        eligibility_routes=eligibility_routes,
     )
 
 

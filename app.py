@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
-from functools import partial
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -14,7 +13,7 @@ from match_presentation import ClassifiedDecision, rank_decisions
 from matcher import evaluate_vacancies
 from models import DecisionRecord, ResumeRecord
 from profile_extraction import extract_profile
-from resume_ingest import MAX_RESUME_BYTES, ResumeValidationError, parse_pasted_resume, parse_resume, scan_with_clamav
+from resume_ingest import ResumeValidationError, parse_pasted_resume
 
 load_dotenv()
 
@@ -23,12 +22,10 @@ def delete_session_data() -> None:
     """Remove the resume record and every associated decision from this session."""
     for key in ("resume", "profile", "vacancies", "batch", "discovery_result", "owner_id", "session_started"):
         st.session_state.pop(key, None)
-    st.session_state["upload_nonce"] = secrets.token_hex(8)
 
 
 def _init_state() -> None:
     st.session_state.setdefault("owner_id", secrets.token_urlsafe(24))
-    st.session_state.setdefault("upload_nonce", secrets.token_hex(8))
     st.session_state.setdefault("screen", "resume")
     st.session_state.setdefault("session_started", datetime.now(UTC))
     retention = _retention_minutes()
@@ -40,11 +37,11 @@ def _init_state() -> None:
 
 def _resume_screen() -> None:
     st.header("1. Add your résumé")
-    st.write("Paste your résumé or upload a readable PDF/DOCX. We compare its work and education evidence with actual open USAJOBS announcements; we never apply for you.")
-    st.info("Session-only privacy: the file is processed in memory for matching and is discarded when you delete it or the session ends. Full resume text is not shown or written to ordinary logs.")
+    st.write("Paste your résumé text. We compare its work and education evidence with actual open USAJOBS announcements; we never apply for you.")
+    st.info("Session-only privacy: pasted résumé text is processed in memory for matching and is discarded when you delete it or the session ends. Full résumé text is not shown or written to ordinary logs.")
     resume: ResumeRecord | None = st.session_state.get("resume")
     if resume:
-        st.success(f"Résumé ready: {resume.filename} — text extraction succeeded")
+        st.success("Résumé text ready")
         if st.button("Find Matching Jobs", type="primary", use_container_width=True):
             _run_discovery(resume)
         left, right = st.columns(2)
@@ -57,35 +54,16 @@ def _resume_screen() -> None:
         with st.expander("Have a specific announcement? Paste it instead"):
             _manual_announcement_form(resume)
         return
-    paste_tab, upload_tab = st.tabs(["Paste résumé", "Upload PDF or DOCX"])
-    with paste_tab:
-        with st.form("paste-resume"):
-            pasted = st.text_area("Résumé text", height=320, placeholder="Include positions, performed duties, dates, hours, education, and credentials when stated.")
-            find_from_paste = st.form_submit_button("Find Matching Jobs", type="primary")
-        if find_from_paste:
-            try:
-                record = parse_pasted_resume(pasted, st.session_state.owner_id)
-                st.session_state.resume = record
-                _run_discovery(record)
-            except ResumeValidationError as exc:
-                st.error(str(exc))
-    with upload_tab:
-        uploaded = st.file_uploader(
-            "Résumé file", type=["pdf", "docx"], key=f"resume-upload-{st.session_state.upload_nonce}",
-            help=f"PDF or DOCX, up to {MAX_RESUME_BYTES // 1024 // 1024} MB. Password-protected, image-only, unsafe, empty, or unreadable files are rejected.",
-        )
-        st.caption(f"Accepted: PDF and DOCX • Maximum size: {MAX_RESUME_BYTES // 1024 // 1024} MB • No saved-résumé feature is enabled")
-        if uploaded is not None:
-            try:
-                with st.spinner("Validating and extracting résumé text…"):
-                    clamav_host = os.getenv("CLAMAV_HOST", "").strip()
-                    scanner = partial(scan_with_clamav, host=clamav_host, port=int(os.getenv("CLAMAV_PORT", "3310"))) if clamav_host else None
-                    production = os.getenv("APP_ENV", "development").lower() == "production"
-                    record = parse_resume(uploaded.getvalue(), uploaded.name, uploaded.type, st.session_state.owner_id, malware_scanner=scanner, require_malware_scan=production)
-                st.session_state.resume = record
-                st.rerun()
-            except ResumeValidationError as exc:
-                st.error(str(exc))
+    with st.form("paste-resume"):
+        pasted = st.text_area("Paste your résumé text", height=320, placeholder="Include positions, performed duties, dates, hours, education, and credentials when stated.")
+        find_from_paste = st.form_submit_button("Find Matching Jobs", type="primary")
+    if find_from_paste:
+        try:
+            record = parse_pasted_resume(pasted, st.session_state.owner_id)
+            st.session_state.resume = record
+            _run_discovery(record)
+        except ResumeValidationError as exc:
+            st.error(str(exc))
 
 
 def _run_discovery(resume: ResumeRecord) -> None:
@@ -209,7 +187,7 @@ def _results_screen() -> None:
 def _privacy_panel() -> None:
     with st.expander("Privacy and data controls"):
         retention = _retention_minutes()
-        st.write(f"The app processes the uploaded file, extracted text, structured evidence, pasted announcement text, and decision records only to perform the comparison. V.3 stores this data only in the current server session; it is removed when you use the deletion control or after {retention} minutes. Standard logs must not contain resume or announcement text.")
+        st.write(f"BreadAgent V4 processes pasted résumé text, structured evidence, pasted announcement text, and decision records only to perform the comparison. This data stays in the current server session and is removed when you use the deletion control or after {retention} minutes. Standard logs must not contain résumé or announcement text.")
         st.write("Job Discovery sends only inferred occupational-series codes, dates, and announcement control numbers to the official unauthenticated USAJOBS data endpoints; it does not transmit your résumé. No USAJOBS credentials are required. The app never asks for or stores a USAJOBS password and does not use resume content for model training.")
         contact = os.getenv("PRIVACY_CONTACT", "the operator listed by this deployment")
         st.write(f"For privacy questions, contact {contact}.")
@@ -223,9 +201,9 @@ def _retention_minutes() -> int:
 
 
 def main() -> None:
-    st.set_page_config(page_title="USAJOBS Resume Matcher", page_icon="📄", layout="wide")
+    st.set_page_config(page_title="BreadAgent V4", page_icon="📄", layout="wide")
     _init_state()
-    st.title("USAJOBS Resume Matcher")
+    st.title("BreadAgent V4")
     st.write("Compare evidence in one résumé with selected current federal vacancies or a pasted announcement. This tool never signs in, auto-applies, uploads application materials, or submits an application.")
     _privacy_panel()
     screen = st.session_state.screen if st.session_state.get("resume") else "resume"

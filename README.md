@@ -1,6 +1,6 @@
-# USAJOBSAgent V4
+# BreadAgent V4
 
-A résumé-first Streamlit matcher for federal vacancy announcements. Paste résumé text or upload a PDF/DOCX, then click **Find Matching Jobs**. Behind the scenes, the app infers strongly supported occupational series from documented work experience, retrieves open announcements through the official unauthenticated Historic JOAs and Announcement Text endpoints, and compares each announcement with the résumé. Results are classified **MATCH**, **POSSIBLE MATCH**, or **NOT A MATCH**. Pasted announcement text remains available as a secondary fallback.
+A plain-text résumé-first Streamlit matcher for federal vacancy announcements. Paste your résumé text, then click **Find Matching Jobs**. PDF/DOCX file upload is not exposed in the V4 MVP. Behind the scenes, the app infers strongly supported occupational series from documented work experience, retrieves open announcements through the official unauthenticated Historic JOAs and Announcement Text endpoints, and compares each announcement with the résumé. Results are classified **MATCH**, **POSSIBLE MATCH**, or **NOT A MATCH**. Pasted announcement text remains available as a secondary fallback.
 
 A MATCH is evidence screening, not a guarantee of eligibility, qualification, referral, interview, or selection. The application never signs in to USAJOBS, collects a USAJOBS password, prepares an application, or submits one. The only application-related action is a link to the official announcement.
 
@@ -21,7 +21,7 @@ Discovery is intentionally bounded and **not an exhaustive USAJOBS search**. It 
 
 ## Architecture
 
-- `resume_ingest.py`: signature, size, archive/active-content, encryption, readability, and extraction checks; session-scoped resume/evidence records.
+- `resume_ingest.py`: plain-text résumé parsing and session-scoped evidence records; PDF/DOCX validation and ClamAV scanning code is retained for a possible future upload feature but is not reached from the current UI.
 - `acquisition.py`: pasted-text normalization and official-host URL validation. Legacy URL retrieval remains in this module but is not used by the active app.
 - `historic_poc.py`: reusable unauthenticated Historic JOA endpoint primitives and open-status filtering.
 - `profile_extraction.py`: structured, session-only résumé profile with supported series, confidence, source evidence, duty signals, and existing discovery limits.
@@ -37,26 +37,24 @@ Discovery is intentionally bounded and **not an exhaustive USAJOBS search**. It 
 
 ## Privacy and security
 
-V4 deliberately implements session-only retention. It does not offer saved resumes or user accounts. Source bytes are not persisted by application code; extracted resume text, announcement text, and derived evidence live only in the Streamlit server session and are removed with the deletion control or session expiry. Full document text is not logged.
+BreadAgent V4 deliberately implements session-only retention. It does not offer saved résumés or user accounts. Pasted résumé text, announcement text, and derived evidence live only in the Streamlit server session and are removed with the deletion control or session expiry. Full document text is not logged.
 
-Uploads are limited to 8 MB PDF/DOCX files and checked for matching signatures, encrypted PDFs, unsafe DOCX archive characteristics, active content, known test-malware signatures, and insufficient extracted text. Pasted résumé text does not use or require ClamAV. When `APP_ENV=production`, PDF/DOCX uploads fail closed unless a reachable ClamAV `clamd` service is configured with `CLAMAV_HOST` and `CLAMAV_PORT`; pasted-text matching remains available. The client uses the ClamAV INSTREAM protocol, so source bytes do not need to be written to a temporary file.
+The current plain-text workflow does not use or require ClamAV. PDF/DOCX upload controls are not shown. The retained upload parser still validates file signatures, size, unsafe DOCX content, encryption, and readability; if file upload is restored while `APP_ENV=production`, it fails closed unless a reachable ClamAV `clamd` service is configured. The scanner uses INSTREAM, so source bytes need not be written to a temporary file.
 
 ### Production configuration
 
-The checked-in `render.yaml` defines the application service but does not provision ClamAV. Configure these values in the production environment; do not put personal contact details or credentials in source control:
+The checked-in `render.yaml` defines the existing application service; this MVP change does not rename or alter that service. Configure the current production values without putting personal contact details or credentials in source control:
 
 | Variable | Production use |
 | --- | --- |
-| `APP_ENV` | Set to `production` so PDF/DOCX uploads require a successful malware scan. |
+| `APP_ENV` | Set to `production`; the current plain-text workflow does not require a scanner. |
 | `PRIVACY_CONTACT` | Operator-controlled privacy/support email address or contact route displayed in the privacy panel; provide a real, monitored route before public release. |
-| `CLAMAV_HOST` | Private hostname of a reachable `clamd` service; required for production PDF/DOCX uploads, not for pasted résumés. |
-| `CLAMAV_PORT` | `clamd` TCP port (default `3310`); must match the service. |
 | `SESSION_RETENTION_MINUTES` | Session-data retention period (default `60`); choose and disclose the production policy. |
 | `PYTHON_VERSION` | Python runtime version selected by the deployment configuration. |
 
-The hosting platform supplies `PORT` for the Streamlit start command. Neither `USAJOBS_API_KEY` nor `USAJOBS_EMAIL` is needed by the active V4 workflow.
+The hosting platform supplies `PORT` for the Streamlit start command. Neither `USAJOBS_API_KEY` nor `USAJOBS_EMAIL` is needed by the active V4 workflow. `CLAMAV_HOST` and `CLAMAV_PORT` remain declared in the existing deployment configuration for a possible future upload feature, but neither is required by the current plain-text UI.
 
-The simplest planned upload-safe architecture is a separate, privately reachable `clamd` service on the same hosting private network as `usajobsagent`, with no public scanner endpoint. Configure `CLAMAV_HOST` to its internal hostname and `CLAMAV_PORT` to its listening port. Keep virus signatures updated, allow the app to reach the scanner, and monitor scanner health; an unavailable scanner intentionally blocks file uploads. Confirm private-network support and adequate memory for the chosen service plan before enabling uploads. This is a configuration plan only; no scanner infrastructure is included in this repository.
+If uploads return later, the planned architecture is a separate, privately reachable `clamd` service on the same hosting private network as `usajobsagent`, with no public scanner endpoint. Set `CLAMAV_HOST` to its internal hostname and `CLAMAV_PORT` to its listening port, keep signatures updated, and monitor scanner health. Confirm private-network support and adequate memory before enabling uploads. No scanner infrastructure is included in this repository.
 
 The application enforces the configured session lifetime and deletes the resume identifier, extracted text, evidence, vacancies, and decisions at expiry. The hosting layer remains responsible for HTTPS, encryption of infrastructure-managed memory/swap, rate limiting, monitoring, and an appropriate support route.
 
@@ -68,4 +66,4 @@ Document and announcement content is always treated as untrusted data. The match
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The suite covers pasted and uploaded résumés, manual announcement matching without credentials, conservative series inference, open/closed filtering, Historic JOA pagination, Announcement Text retrieval, discovery-to-matcher integration, all three display classifications and ordering, title-only rejection, duration, licenses/status, alternative and multi-grade paths, processing errors, prompt-like content, and deterministic reruns.
+The suite covers the pasted-résumé workflow, retained upload-parser security behavior, manual announcement matching without credentials, conservative series inference, open/closed filtering, Historic JOA pagination, Announcement Text retrieval, discovery-to-matcher integration, all three display classifications and ordering, title-only rejection, duration, licenses/status, alternative and multi-grade paths, processing errors, prompt-like content, and deterministic reruns.

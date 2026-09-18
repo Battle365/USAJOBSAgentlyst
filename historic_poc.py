@@ -160,6 +160,12 @@ def normalize_pair(summary: dict, full_text: dict) -> dict:
         "grades": grades,
         "grade_note": grade_note,
         "eligibility": str(summary.get("whoMayApply") or ""),
+        "eligibility_source": "historic_joa",
+        "hiring_paths": tuple(
+            str(item.get("hiringPath") or "").strip()
+            for item in (summary.get("hiringpaths") or [])
+            if isinstance(item, dict) and str(item.get("hiringPath") or "").strip()
+        ),
         "qualifications": qualifications,
         "specialized_experience": "",  # Included in qualification prose when present.
         "education": str(full_text.get("requirementsEducation") or ""),

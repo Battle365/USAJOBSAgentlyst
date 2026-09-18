@@ -1,0 +1,35 @@
+{
+  "description": "Frozen projection of the live Historic JOA hiring-path field shape; no personal or qualification text.",
+  "cases": [
+    {
+      "name": "public_with_null_who_may_apply",
+      "summary": {"whoMayApply": null, "hiringpaths": [{"hiringPath": "The public"}]},
+      "public": true
+    },
+    {
+      "name": "multiple_paths_including_public",
+      "summary": {"whoMayApply": null, "hiringpaths": [{"hiringPath": "Federal employees - Competitive service"}, {"hiringPath": "The public"}, {"hiringPath": "Veterans"}]},
+      "public": true
+    },
+    {
+      "name": "restricted_paths_only",
+      "summary": {"whoMayApply": null, "hiringpaths": [{"hiringPath": "Federal employees - Competitive service"}, {"hiringPath": "Veterans"}]},
+      "public": false
+    },
+    {
+      "name": "null_hiringpaths",
+      "summary": {"whoMayApply": null, "hiringpaths": null},
+      "public": false
+    },
+    {
+      "name": "missing_hiringpaths",
+      "summary": {"whoMayApply": null},
+      "public": false
+    },
+    {
+      "name": "empty_hiringpaths",
+      "summary": {"whoMayApply": null, "hiringpaths": []},
+      "public": false
+    }
+  ]
+}

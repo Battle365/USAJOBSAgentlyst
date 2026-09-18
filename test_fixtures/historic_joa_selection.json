@@ -1,0 +1,41 @@
+{
+  "description": "Frozen synthetic Historic JOA summary projection for selector comparison; no qualification text is included.",
+  "as_of": "2026-09-17",
+  "close_date": "2026-12-31",
+  "rows": [
+    [610001, "0610", "Medical Support Specialist", "Agency A", "Boston", "MA", "2026-09-16"],
+    [610002, "0610", "Medical Support Specialist", "Agency A", "Boston", "MA", "2026-09-15"],
+    [610003, "0610", "Medical Support Specialist", "Agency A", "Boston", "MA", "2026-09-14"],
+    [610004, "0610", "Medical Support Specialist", "Agency B", "Chicago", "IL", "2026-09-13"],
+    [610005, "0610", "Medical Support Specialist", "Agency B", "Chicago", "IL", "2026-09-12"],
+    [610006, "0610", "Medical Support Specialist", "Agency B", "Chicago", "IL", "2026-09-11"],
+    [610007, "0610", "Registered Nurse - Patient Assessment", "Agency C", "Denver", "CO", "2026-09-10", "The public"],
+    [610008, "0610", "Registered Nurse - Nursing Care", "Agency D", "Seattle", "WA", "2026-09-09", "The public"],
+    [610009, "0610", "Nurse Care Coordinator", "Agency E", "Atlanta", "GA", "2026-09-08", "The public"],
+
+    [510001, "0510", "Financial Support Analyst", "Agency F", "Boston", "MA", "2026-09-16"],
+    [510002, "0510", "Financial Support Analyst", "Agency F", "Boston", "MA", "2026-09-15"],
+    [510003, "0510", "Financial Support Analyst", "Agency F", "Boston", "MA", "2026-09-14"],
+    [510004, "0510", "Financial Support Analyst", "Agency G", "Chicago", "IL", "2026-09-13"],
+    [510005, "0510", "Financial Support Analyst", "Agency G", "Chicago", "IL", "2026-09-12"],
+    [510006, "0510", "Financial Support Analyst", "Agency G", "Chicago", "IL", "2026-09-11"],
+    [510007, "0510", "Accountant - Financial Statements", "Agency H", "Denver", "CO", "2026-09-10", "The public"],
+    [510008, "0510", "General Ledger Accountant", "Agency I", "Seattle", "WA", "2026-09-09", "The public"],
+    [510009, "0510", "Accounting Officer", "Agency J", "Atlanta", "GA", "2026-09-08", "The public"],
+
+    [2210001, "2210", "Technical Support Specialist", "Agency K", "Boston", "MA", "2026-09-16"],
+    [2210002, "2210", "Technical Support Specialist", "Agency K", "Boston", "MA", "2026-09-15"],
+    [2210003, "2210", "Technical Support Specialist", "Agency K", "Boston", "MA", "2026-09-14"],
+    [2210004, "2210", "Technical Support Specialist", "Agency L", "Chicago", "IL", "2026-09-13"],
+    [2210005, "2210", "Technical Support Specialist", "Agency L", "Chicago", "IL", "2026-09-12"],
+    [2210006, "2210", "Technical Support Specialist", "Agency L", "Chicago", "IL", "2026-09-11"],
+    [2210007, "2210", "IT Specialist - Network Security", "Agency M", "Denver", "CO", "2026-09-10", "The public"],
+    [2210008, "2210", "Cybersecurity Specialist", "Agency N", "Seattle", "WA", "2026-09-09", "The public"],
+    [2210009, "2210", "Systems Administrator", "Agency O", "Atlanta", "GA", "2026-09-08", "The public"],
+
+    [610010, "0610", "Registered Nurse", "Agency P", "Miami", "FL", "2026-09-16", "The public", "GS", "11", "Job canceled"],
+    [510010, "0510", "Accountant", "Agency Q", "Miami", "FL", "2026-09-16", "The public", "GS", "09"],
+    [2210010, "2210", "IT Specialist", "Agency R", "Miami", "FL", "2026-09-16", "The public", "GS", "11", "Accepting applications", "2026-09-16"],
+    [610011, "0610", "Registered Nurse", "Agency S", "Phoenix", "AZ", "2026-09-10", "The public", "VN", "03"]
+  ]
+}
